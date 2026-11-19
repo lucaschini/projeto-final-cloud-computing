@@ -82,6 +82,18 @@ button:focus-visible{outline:3px solid var(--peel);outline-offset:3px}
 #end h2{font-size:clamp(2rem,8vw,3.2rem);color:var(--peel)}
 #end p{max-width:34ch;margin:0;line-height:1.5}
 #eimg{width:min(44vw,250px);height:auto;filter:drop-shadow(0 14px 12px rgba(0,0,0,.6))}
+.name{display:flex;flex-direction:column;gap:6px;align-items:center}
+.name input{font:inherit;font-weight:800;font-size:1.05rem;text-align:center;color:var(--ink);background:#0008;border:1px solid #fff6;border-radius:10px;padding:10px 14px;width:min(280px,80vw)}
+.name input:focus{outline:3px solid var(--peel);outline-offset:2px}
+.name small{min-height:1.2em;font-size:.85rem;color:var(--bad);font-weight:800}
+#title,#end{overflow-y:auto;justify-content:safe center}
+.rank{width:min(320px,90vw);text-align:left}
+.rank h3{margin:0 0 6px;font-size:.95rem;font-weight:800;opacity:.85;text-align:center}
+.rank ol{margin:0;padding:0;list-style:none;display:grid;gap:3px;font-size:.9rem}
+.rank li{display:flex;justify-content:space-between;gap:10px;padding:2px 6px;border-radius:6px}
+.rank li.me{background:#f6c61833;color:var(--peel);font-weight:800}
+.rank li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .empty{opacity:.7;text-align:center;display:block}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition-duration:.01s!important}}
 </style>
 </head>
@@ -107,7 +119,12 @@ button:focus-visible{outline:3px solid var(--peel);outline-offset:3px}
 <section id="title" class="screen">
   <h1>Bananaverso</h1>
   <p>Proteja a banana. Alimente a floresta.</p>
-  <button class="btn" id="play">Jogar</button>
+  <form class="name" id="nameForm" novalidate>
+    <input id="username" maxlength="20" autocomplete="nickname" placeholder="Seu nome" aria-label="Seu nome de jogador">
+    <small id="nameErr" role="alert"></small>
+    <button class="btn" id="play" type="submit">Jogar</button>
+  </form>
+  <div class="rank panel" id="rankTitle"></div>
 </section>
 
 <section id="game" class="screen">
@@ -131,6 +148,7 @@ button:focus-visible{outline:3px solid var(--peel);outline-offset:3px}
   <h2 id="etitle"></h2>
   <p id="etext"></p>
   <button class="btn" id="ebtn"></button>
+  <div class="rank panel" id="rankEnd"></div>
 </section>
 
 <script>
@@ -199,7 +217,7 @@ var T=null,ci=0,side=0,subT=[];
 function playCine(){audioInit();show("cine");ci=0;drone(1);nextShot()}
 function nextShot(){
   var sub=$("sub");
-  if(ci>=CS.length){sub.style.opacity=0;rain(0);T=setTimeout(function(){show("title")},900);return}
+  if(ci>=CS.length){sub.style.opacity=0;rain(0);T=setTimeout(showTitle,900);return}
   var c=CS[ci],A=[$("shA"),$("shB")],n=side^1,d=A[n];
   d.className="shot";d.style.backgroundImage="url("+IMG[c.i]+")";void d.offsetWidth;
   d.className="shot on "+c.k;
@@ -212,9 +230,67 @@ function nextShot(){
 }
 function stopCine(){clearTimeout(T);subT.forEach(clearTimeout);subT=[];rain(0)}
 $("watch").addEventListener("click",playCine);
-$("skipIntro").addEventListener("click",function(){audioInit();startGame()});
-$("skip").addEventListener("click",function(){stopCine();startGame()});
-$("play").addEventListener("click",startGame);
+$("skipIntro").addEventListener("click",function(){audioInit();showTitle()});
+$("skip").addEventListener("click",function(){stopCine();showTitle()});
+
+/* ---------- API (backend via nginx em /api) ---------- */
+var API="/api",NAME_RE=/^[A-Za-z0-9_]{3,20}$/,MAXC=500,MAXB=50000;
+var me=null,pend={c:0,b:0},syncing=false;
+try{me=localStorage.getItem("bv_user")}catch(e){}
+if(me&&!NAME_RE.test(me))me=null;
+if(me)$("username").value=me;
+function api(path,opt){
+  opt=opt||{};
+  return fetch(API+path,{method:opt.method||"GET",headers:{"Content-Type":"application/json"},body:opt.body?JSON.stringify(opt.body):undefined})
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()});
+}
+function takeBatch(){
+  var c=Math.min(pend.c,MAXC),b=Math.min(Math.floor(pend.b),MAXB);
+  if(!me||(c<=0&&b<=0))return null;
+  pend.c-=c;pend.b-=b;return {clicks:c,bananas:b};
+}
+function flush(){
+  if(syncing)return Promise.resolve();
+  var body=takeBatch();if(!body)return Promise.resolve();
+  syncing=true;
+  return api("/players/"+me+"/progress",{method:"POST",body:body})
+    .catch(function(){pend.c+=body.clicks;pend.b+=body.bananas})
+    .then(function(){syncing=false});
+}
+setInterval(flush,5000);
+document.addEventListener("visibilitychange",function(){
+  if(document.visibilityState!=="hidden"||!navigator.sendBeacon)return;
+  var body=takeBatch();if(!body)return;
+  var ok=navigator.sendBeacon(API+"/players/"+me+"/progress",new Blob([JSON.stringify(body)],{type:"application/json"}));
+  if(!ok){pend.c+=body.clicks;pend.b+=body.bananas}
+});
+function loadRank(id){
+  var el=$(id);
+  el.innerHTML="<h3>Ranking de colheita</h3><span class='empty'>Carregando…</span>";
+  flush().then(function(){return api("/leaderboard?limit=10")}).then(function(rows){
+    var h="<h3>Ranking de colheita</h3>";
+    if(!rows.length){el.innerHTML=h+"<span class='empty'>Ninguém colheu ainda. Seja o primeiro!</span>";return}
+    var ol=document.createElement("ol");
+    rows.forEach(function(r,i){
+      var li=document.createElement("li");if(r.username===me)li.className="me";
+      var a=document.createElement("span");a.textContent=(i+1)+". "+r.username;
+      var b=document.createElement("span");b.textContent=r.bananas.toLocaleString("pt-BR")+" 🍌";
+      li.appendChild(a);li.appendChild(b);ol.appendChild(li);
+    });
+    el.innerHTML=h;el.appendChild(ol);
+  }).catch(function(){el.innerHTML="<h3>Ranking de colheita</h3><span class='empty'>Ranking indisponível no momento.</span>"});
+}
+function showTitle(){show("title");loadRank("rankTitle")}
+$("nameForm").addEventListener("submit",function(e){
+  e.preventDefault();
+  var v=$("username").value.trim();
+  if(!NAME_RE.test(v)){$("nameErr").textContent="Use de 3 a 20 letras, números ou _.";$("username").focus();return}
+  $("nameErr").textContent="";
+  if(v!==me){flush();pend={c:0,b:0}}
+  me=v;try{localStorage.setItem("bv_user",v)}catch(e){}
+  api("/players",{method:"POST",body:{username:v}}).catch(function(){});
+  audioInit();startGame();
+});
 
 /* ---------- jogo ---------- */
 var gl=0;
@@ -318,7 +394,7 @@ UP.forEach(function(u,i){
 function hit(cx,cy){
   if(S.over)return;
   if(!S.run){S.run=true;$("msg").style.opacity=0}
-  var p=1+S.own.luva;S.prog+=p;S.coins+=p;
+  var p=1+S.own.luva;S.prog+=p;S.coins+=p;pend.c++;pend.b+=p;
   blip(480+Math.random()*220,.07,"triangle",.1);
   var r=$("stage").getBoundingClientRect();
   if(cx==null){var b=$("banana").getBoundingClientRect();cx=b.left+b.width/2;cy=b.top+b.height/2}
@@ -341,7 +417,7 @@ function check(){
   if(S.over)return;
   if(S.prog>=LV[S.lvl].g){
     if(S.lvl===4){S.over=true;S.run=false;win();return}
-    S.lvl++;setLevel();
+    S.lvl++;setLevel();flush();
     $("msg").textContent="Evoluiu! "+LV[S.lvl].n;$("msg").style.opacity=1;
     [523,659,784].forEach(function(f,i){setTimeout(function(){blip(f,.25,"triangle",.14)},i*110)});
   }
@@ -349,7 +425,7 @@ function check(){
 setInterval(function(){
   if(!S.run||S.over)return;
   S.left-=.1;
-  var a=S.own.faz*.1;S.prog+=a;S.coins+=a;
+  var a=S.own.faz*.1;S.prog+=a;S.coins+=a;pend.b+=a;
   check();if(S.over)return;
   if(S.left<=0){S.left=0;lose()}
   render();
@@ -358,6 +434,7 @@ function endScreen(bg,title,text,btn,fn,img){
   $("end").style.backgroundImage="linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,.82)),url("+IMG[bg]+")";
   $("eimg").src=IMG[img];$("etitle").textContent=title;$("etext").textContent=text;$("ebtn").textContent=btn;$("ebtn").onclick=fn;
   $("end").classList.add("on");
+  loadRank("rankEnd");
 }
 function lose(){
   S.over=true;S.run=false;
