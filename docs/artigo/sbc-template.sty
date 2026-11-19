@@ -1,0 +1,40 @@
+% sbc-template.sty
+% Reproducao do layout do modelo de artigos da Sociedade Brasileira de
+% Computacao (SBC): A4, Times 12pt, coluna unica, titulo 16pt negrito,
+% secoes 13pt negrito, resumo/abstract em italico com recuo de 0,8 cm.
+% Se o professor exigir o arquivo oficial, basta trocar este .sty pelo do
+% modelo "SBC Conferences Template" (Overleaf) - os comandos sao os mesmos.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{sbc-template}[2026/11/19 Layout SBC]
+
+\RequirePackage{mathptmx}
+\RequirePackage[a4paper,top=3.5cm,bottom=2.5cm,left=3cm,right=3cm]{geometry}
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{6pt}
+\renewcommand{\baselinestretch}{1}
+\pagestyle{plain}
+
+% Secoes numeradas "1.", 13pt negrito; subsecoes "1.1.", 12pt negrito
+\renewcommand{\@seccntformat}[1]{\csname the#1\endcsname.\hspace{0.5em}}
+\renewcommand{\section}{\@startsection{section}{1}{0pt}{12pt}{1pt}{\fontsize{13}{15}\selectfont\bfseries}}
+\renewcommand{\subsection}{\@startsection{subsection}{2}{0pt}{12pt}{1pt}{\fontsize{12}{14}\selectfont\bfseries}}
+
+% Bloco de titulo
+\newcommand{\address}[1]{\gdef\@address{#1}}
+\renewcommand{\maketitle}{%
+  \begin{center}
+    {\fontsize{16}{19}\bfseries \@title\par}
+    \vspace{12pt}
+    {\bfseries \@author\par}
+    \vspace{12pt}
+    {\@address\par}
+  \end{center}
+  \vspace{6pt}}
+
+% Resumo e Abstract em italico, com recuo nas duas margens
+\newenvironment{resumo}{\begin{list}{}{\leftmargin=0.8cm\rightmargin=0.8cm}\item\relax\itshape\textbf{Resumo.}~}{\end{list}}
+\renewenvironment{abstract}{\begin{list}{}{\leftmargin=0.8cm\rightmargin=0.8cm}\item\relax\itshape\textbf{Abstract.}~}{\end{list}}
+
+% Legendas 10pt, negrito no rotulo
+\RequirePackage[font=small,labelfont=bf,labelsep=colon]{caption}
+\endinput
